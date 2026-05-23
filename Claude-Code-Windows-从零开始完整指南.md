@@ -406,6 +406,19 @@ claude
 | 想切到订阅，但 `/status` 仍显示 API Key | 环境变量没真删 | 走 [6.5 Step 1 PowerShell 命令](#65-场景-d从-api-key-切回订阅) |
 | `/logout` 显示成功但下次启动还是自动登录 | 凭据管理器有缓存 | [6.6 Step 2](#66-终极方案手动彻底清理登录态) |
 
+### 6.8 用了 CC Switch 或第三方中转站？
+
+如果你属于以下任何一种情况：
+
+- 装过 **CC Switch**（开源 GUI 账号切换器）
+- 用过 `ANTHROPIC_AUTH_TOKEN` + `ANTHROPIC_BASE_URL` 接入过第三方"中转站"（国内代理 API）
+- CC Switch 切了 Provider 但 `/status` 还是旧账号
+- 想同时管理多个账号（官方 + 多个中转站）
+
+**单独的专题文档**：[Claude Code 第三方中转站与 CC Switch 完整指南](./Claude-Code-中转站与CC-Switch-完整指南.md)
+
+里面覆盖了：环境变量 vs CC Switch 的优先级冲突、中转站三种类型辨别、安装配置 CC Switch、切换标准流程、所有"切了没生效"坑、中转站常见报错、怎么彻底回归官方、隐私合规说明。
+
 ---
 
 ## 七、第一次跑 Claude Code（Hello World）
@@ -670,6 +683,65 @@ notepad $HOME\.claude\settings.json
 - 长会话定期 `/compact`
 - 用 `CLAUDE.md` 沉淀重复指令，别每次复述
 - 用 Plan 模式让它先规划，避免无效尝试
+
+### Q15：怎么判断我现在用的是 Anthropic 官方还是某个中转站？
+
+启动 `claude`，输入 `/status`，看 **Endpoint** 字段：
+
+- `https://api.anthropic.com` → 官方
+- 其它任何地址 / IP（如 `https://api.xxx.com` 或 `http://1.2.3.4:8080`）→ 中转站
+
+也可以在 PowerShell 里跑：
+
+```powershell
+echo $env:ANTHROPIC_BASE_URL
+```
+
+如果有值且不是 `api.anthropic.com`，就是中转站。深度排查见 [中转站与 CC Switch 完整指南 第六章](./Claude-Code-中转站与CC-Switch-完整指南.md#六自检你机器上当前的认证状态)。
+
+### Q16：CC Switch 切换了 Provider 但 `/status` 还是旧账号？
+
+99% 是**环境变量在压制 CC Switch**。Claude Code 启动时认证优先级是：
+
+```
+环境变量  >  ~/.claude/settings.json (CC Switch 写入)  >  OAuth 缓存
+```
+
+CC Switch 改的是 settings.json。只要 `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` **任何一个**有值，就先生效，把 CC Switch 的设置盖掉。
+
+清环境变量（PowerShell）：
+
+```powershell
+[Environment]::SetEnvironmentVariable("ANTHROPIC_API_KEY",    $null, "User")
+[Environment]::SetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN", $null, "User")
+[Environment]::SetEnvironmentVariable("ANTHROPIC_BASE_URL",   $null, "User")
+```
+
+**关掉所有终端（包括整个 Windows Terminal 进程）重开**，再 CC Switch 里 Activate 目标 Provider。详见 [中转站指南 5.5](./Claude-Code-中转站与CC-Switch-完整指南.md#55-用-cc-switch-时必须清掉环境变量)。
+
+### Q17：能让 Claude Code 用本地 LLM（Ollama 等）吗？
+
+**技术上可以**——Ollama 等本地服务能模拟 Anthropic API 协议：
+
+```powershell
+setx ANTHROPIC_BASE_URL "http://localhost:11434/v1"
+setx ANTHROPIC_AUTH_TOKEN "dummy"
+```
+
+然后 `claude --model llama3` 之类。
+
+**但模型质量断崖式下降**：本地开源模型在 Tool use / Caching / Subagents / 长上下文方面跟 Claude 差距巨大，**Claude Code 大部分高级功能会瘫痪**。仅适合极偶尔的离线场景；正常工作流绝不推荐。
+
+### Q18：Anthropic 会用我的代码训练模型吗？
+
+| 渠道 | 是否用于训练 |
+|---|---|
+| Claude.ai 订阅（Pro / Max） | **默认不会**（可在设置里再次确认） |
+| Anthropic API / Console | **明确承诺不会** |
+| 第三方中转站 | **取决于中转站隐私政策**——很可能被记录用于二次销售或自家模型训练 |
+| Bedrock / Vertex AI | **不会**（数据在你自己的云账户） |
+
+涉密代码 / 商业 IP **绝对不要走中转站**。详细政策：`https://www.anthropic.com/legal/privacy`。
 
 ---
 
